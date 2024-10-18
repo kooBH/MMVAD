@@ -3,9 +3,15 @@ import torch.nn as nn
 from utils.metric import run_metric
 
 
-def get_model(hp):
+def get_model(hp,device="cpu"):
 
-    return
+    if hp.model.type == "VVAD" :
+        from VVAD import VVAD_helper
+        model = VVAD_helper(hp).to(device)
+    else :
+        return NotImplementedError("ERROR::Unsupported model type : {}".format(hp.model.type))
+
+    return model
 
 def run(data,model,criterion,hp,device="cuda:0",ret_output=False): 
     input = data['input'].to(device)
@@ -17,6 +23,8 @@ def run(data,model,criterion,hp,device="cuda:0",ret_output=False):
         loss = criterion(output,target).to(device)
     elif hp.loss.type == "wSDRLoss" : 
         loss = criterion(estim,noisy,target, alpha=hp.loss.wSDRLoss.alpha)
+    else :
+        loss = criterion(output,target).to(device)
     
     if ret_output :
         return output, loss

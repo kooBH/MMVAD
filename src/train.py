@@ -6,14 +6,10 @@ import numpy as np
 
 from tensorboardX import SummaryWriter
 
-from model.Model import Model
-from Dataset import Dataset
-
 from utils.hparams import HParam
 from utils.writer import MyWriter
 
 from common import run,get_model, evaluate
-#from common import run, get_model
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -37,6 +33,7 @@ if __name__ == '__main__':
 
     device = args.device
     version = args.version_name
+    task = hp.task
     torch.cuda.set_device(device)
 
     batch_size = hp.train.batch_size
@@ -55,25 +52,33 @@ if __name__ == '__main__':
     os.makedirs(modelsave_path,exist_ok=True)
     os.makedirs(log_dir,exist_ok=True)
 
-    writer = MyWriter(hp, log_dir)
+    writer = MyWriter(log_dir)
 
-    # TODO
-    train_dataset = Dataset(hp.data.root_train)
-    test_dataset= Dataset(hp.data.root_test)
+    if task == "VVAD" : 
+        from Dataset.VVADDataset import VVADDataset
+        train_dataset = VVADDataset(hp,is_train=True)
+        test_dataset= VVADDataset(hp,is_train=False)
+    elif task == "VAD" :
+        from Dataset.VADDataset import VADDataset
+        train_dataset = VADDataset(hp,is_train=True)
+        test_dataset= VADDataset(hp,is_train=False)
+        raise NotImplementedError("task==VAD is not implemented yet")
+    else : 
+        raise Exception("ERROR::Unsupported task : {}".format(task))
 
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset,batch_size=batch_size,shuffle=True,num_workers=num_workers)
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset,batch_size=batch_size,shuffle=False,num_workers=num_workers)
 
     model = get_model(hp,device=device)
-    # or model = get_model(hp).to(device)
 
     if not args.chkpt == None : 
         print('NOTE::Loading pre-trained model : '+ args.chkpt)
         model.load_state_dict(torch.load(args.chkpt, map_location=device))
 
-    # TODO
     if hp.loss.type == "MSELoss":
         criterion = torch.nn.MSELoss()
+    elif hp.loss.type == "BCELoss":
+        criterion = torch.nn.BCELoss()
     else :
         raise Exception("ERROR::Unsupported criterion : {}".format(hp.loss.type))
 
@@ -99,23 +104,21 @@ if __name__ == '__main__':
     step = args.step
 
     for epoch in range(num_epochs):
+        print("Epoch : {}/{}".format(epoch+1,num_epochs))
         ### TRAIN ####
         model.train()
         train_loss=0
         for i, (batch_data) in enumerate(train_loader):
             step +=1
-            
-            # TODO
-
-            loss = run(batch_data,model,criterion)
+            loss = run(batch_data,model,criterion,hp,device=device)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
            
-            print('TRAIN::{} : Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(version,epoch+1, num_epochs, i+1, len(train_loader), loss.item()))
 
             if step %  hp.train.summary_interval == 0:
+                print('TRAIN::{} : Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(version,epoch+1, num_epochs, i+1, len(train_loader), loss.item()))
                 writer.log_value(loss,step,'train loss : '+hp.loss.type)
 
         train_loss = train_loss/len(train_loader)
@@ -126,20 +129,16 @@ if __name__ == '__main__':
         with torch.no_grad():
             test_loss =0.
             for j, (batch_data) in enumerate(test_loader):
-                loss = run(batch_data,model,criterion)
+                loss = run(batch_data,model,criterion,hp,device=device)
                 test_loss += loss.item()
 
-                print('TEST::{} :  Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(version, epoch+1, num_epochs, j+1, len(test_loader), loss.item()))
                 test_loss +=loss.item()
+            print('TEST::{} :  Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(version, epoch+1, num_epochs, j+1, len(test_loader), loss.item()))
 
             test_loss = test_loss/len(test_loader)
             scheduler.step(test_loss)
             
             writer.log_value(test_loss,step,'test los : ' + hp.loss.type)
-
-            # metric = evaluate(hp,model,list_eval,device=device)
-            # for m in hp.log.eval : 
-            #     writer.log_value(metric[m],step,m+"_VD")
 
             if best_loss > test_loss:
                 torch.save(model.state_dict(), str(modelsave_path)+'/bestmodel.pt')
