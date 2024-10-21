@@ -29,23 +29,39 @@ if __name__ == '__main__':
 
     num_epochs = 1
     batch_size = 1
-    test_model = args.model
-    win_len = hp.audio.frame
 
     ## Model
-    model = Model().to(device)
+    model = get_model(hp,device=device)
+    if not args.chkpt == None : 
+        print('NOTE::Loading pre-trained model : '+ args.chkpt)
+        model.load_state_dict(torch.load(args.chkpt, map_location=device))
 
-    model.load_state_dict(torch.load(test_model,map_location=device))
     model.eval()
     print('NOTE::Loading pre-trained model : ' + test_model)
 
-    # path e.g. : /home/data/kbh/AMI_IITP/amicorpus/ES2002a/video/ES2002a.Closeup1.avi
-    # Label e.g.
+    # Label example for ES2002a.Closeup.avi
+    # path = /home/data/kbh/AMI_IITP/amicorpus/ES2002a/video/ES2002a.Closeup1.avi
+    # SpeakerID : meeting_info["ES2002a"]["0"] == "MEE006"
+    # Label /../AMI-diarization-setup/<only_words/word_and_vocalsoduns>/rttms/<dev/train/test>/ES2002a.rttm
+    #   SPEAKER ES2002a 1 74.89 0.35 <NA> <NA> MEE008 <NA> <NA>
+    #   SPEAKER ES2002a 1 77.44 3.43 <NA> <NA> MEE006 <NA> <NA>
+    #   -> speaker_id = line[7]
+    #   -> start_sec = line[3]
+    #   -> end_sec = line[3] + line[4]
+
 
     # Run for AMI dataset
-    with torch.no_grad():
-        # 2 seconds block with 1 sec sliding window
-        # for each faces
+
+    for path in AMI :  
+        # Load Video
+
+        # extract frace
+
+        # 
+
+        with torch.no_grad():
+            # 2 seconds block(50-frame) with 1 sec(25-frame) sliding window
+            # for each faces
 
 
             

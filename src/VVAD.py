@@ -23,10 +23,12 @@ class encoder(nn.Module):
 
 class TGRU(nn.Module):
     def __init__(self,
-        n_feature) :
+        n_feature,
+        dropout=0.0
+        ) :
         super(TGRU,self).__init__()
 
-        self.gru = nn.GRU(n_feature,n_feature,bidirectional=True,batch_first = True)
+        self.gru = nn.GRU(n_feature,n_feature,bidirectional=True,batch_first = True,dropout=dropout)
         self.f_glu = nn.GLU()
         self.f_norm = nn.InstanceNorm1d(n_feature)
         self.b_glu = nn.GLU()  
@@ -92,7 +94,7 @@ class VVAD(nn.Module):
 
         # Bottleneck
         ## Temporal
-        self.tgru = TGRU(256)
+        self.tgru = TGRU(256,dropout=0.2)
 
         ## Feature
 
