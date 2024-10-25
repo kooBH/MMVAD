@@ -133,12 +133,12 @@ if __name__ == '__main__':
                 test_loss += loss.item()
 
                 test_loss +=loss.item()
-            print('TEST::{} :  Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(version, epoch+1, num_epochs, j+1, len(test_loader), loss.item()))
 
             test_loss = test_loss/len(test_loader)
+            print('TEST::{} :  Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(version, epoch+1, num_epochs, j+1, len(test_loader), test_loss))
             scheduler.step(test_loss)
             
-            writer.log_value(test_loss,step,'test los : ' + hp.loss.type)
+            writer.log_value(test_loss,step,'test loss : ' + hp.loss.type)
 
             if best_loss > test_loss:
                 torch.save(model.state_dict(), str(modelsave_path)+'/bestmodel.pt')

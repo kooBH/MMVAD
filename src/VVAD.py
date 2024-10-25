@@ -1,30 +1,12 @@
 import torch
 import torch.nn as nn
-
-class encoder(nn.Module):
-    def __init__(self,
-        in_channels = 1, 
-        out_channels = 32,
-        kernel_size = (3,3,1),
-        stride = (1,1,1),
-        padding = (0,0,0)
-        ):
-        super(encoder,self).__init__()
-
-        self.conv_1 = nn.Conv3d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
-        self.norm = nn.InstanceNorm3d(out_channels)
-        self.activation = nn.ReLU()
-    
-    def forward(self,x) : 
-        x = self.conv_1(x)
-        x = self.norm(x)
-        x = self.activation(x)
-        return x
+import _coder
 
 class TGRU(nn.Module):
     def __init__(self,
         n_feature,
-        dropout=0.0
+        dropout=0.0,
+        **kwargs
         ) :
         super(TGRU,self).__init__()
 
@@ -48,9 +30,31 @@ class TGRU(nn.Module):
 
         return y
 
+class FSA(nn.Module):
+    def __init__(self,n_channels, num_heads=4,dropout=0.0) :
+        super(FSA,self).__init__()
+
+        self.SA = nn.MultiheadAttention(n_channels, n_channels, batch_first = True,dropout=dropout)
+        self.bnsa = nn.BatchNorm1d(n_channels)
+        self.relu = nn.ReLU()
+
+
+    def forward(self,x) :
+        # x : [B,C,T] -> [B,T,C]
+        x_ = torch.permute(x,(0,2,1))
+
+        ysa,h = self.SA(x_,x_,x_)
+        ysa = torch.permute(ysa,(0,2,1))
+        ysa = self.bnsa(ysa)
+        ysa = self.relu(ysa)
+
+        output = x + ysa
+        return output
+
 class Labeler(nn.Module):
     def __init__(self,
-        n_feature) : 
+        n_feature,
+        **kwargs) : 
         super(Labeler,self).__init__()
 
         self.fc = nn.Linear(n_feature,1)
@@ -63,45 +67,32 @@ class Labeler(nn.Module):
         return y
 
 class VVAD(nn.Module):
-    def __init__(self) : 
+    def __init__(self, hp) : 
         super(VVAD,self).__init__()
+
+        arch = hp.model.architecture
+
+        encoder = getattr(_coder,hp.model.encoder)
 
         # encoder
         self.enc = []
-        module = encoder(1,32, kernel_size=(3,3,3), stride=(2,2,2), padding=(0,0,0))
-        self.add_module("enc{}".format(1),module)
-        self.enc.append(module)
 
-        module = encoder(32,64, kernel_size=(3,3,3), stride=(2,2,2), padding=(0,0,0))
-        self.add_module("enc{}".format(2),module)
-        self.enc.append(module)
-
-        module = encoder(64,128, kernel_size=(3,3,1), stride=(2,2,1), padding=(0,0,0))
-        self.add_module("enc{}".format(3),module)
-        self.enc.append(module)
-
-        module = encoder(128,256, kernel_size=(3,3,1), stride=(2,2,1), padding=(0,0,0))
-        self.add_module("enc{}".format(4),module)
-        self.enc.append(module)
-
-        module = encoder(256,256, kernel_size=(3,3,1), stride=(2,2,1), padding=(1,1,0))
-        self.add_module("enc{}".format(5),module)
-        self.enc.append(module)
-
-        module = encoder(256,256, kernel_size=(3,3,1), stride=(1,1,1), padding=(0,0,0))
-        self.add_module("enc{}".format(5),module)
-        self.enc.append(module)
+        for i in range(len(arch["encoder"])) : 
+            module = encoder(**arch["encoder"][f"enc{i+1}"])
+            self.add_module(f"enc{i+1}",module)
+            self.enc.append(module)
 
         # Bottleneck
         ## Temporal
-        self.tgru = TGRU(256,dropout=0.2)
+        self.TemporalBottleneck= TGRU(**arch["TB"])
 
         ## Feature
+        #self.FrequencialBottleneck = FSA(256, num_heads=4, dropout=0.0)
 
         ## Channel
 
         ## Label
-        self.labeler = Labeler(256)
+        self.labeler = Labeler(**arch["labeler"])
 
         self.enc = nn.ModuleList(self.enc)
 
@@ -122,7 +113,9 @@ class VVAD(nn.Module):
         #print("Bottleneck : {}".format(x.shape))
         # bottlneck
 
-        x = self.tgru(x)
+        x = self.TemporalBottleneck(x)
+
+        #x = self.FrequencialBottleneck(x)
 
         y = self.labeler(x)
         y = torch.permute(y,(0,2,1))
@@ -131,7 +124,7 @@ class VVAD(nn.Module):
 class VVAD_helper(nn.Module) : 
     def __init__(self,hp) : 
         super(VVAD_helper,self).__init__()
-        self.m = VVAD()
+        self.m = VVAD(hp)
 
     def forward(self,x,timestep=38) : 
         x = torch.permute(x,(0,2,3,1))
