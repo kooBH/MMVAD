@@ -127,6 +127,7 @@ class VVAD_helper(nn.Module) :
         self.m = VVAD(hp)
 
     def forward(self,x,timestep=38) : 
+        # x : (B, T, 96,96)
         x = torch.permute(x,(0,2,3,1))
         x = torch.unsqueeze(x,1)
         y = self.m(x)

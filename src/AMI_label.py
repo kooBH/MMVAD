@@ -25,6 +25,8 @@ class AMI_label():
         # Label for each meeting
         label_list = glob.glob(os.path.join(dir_label,target,"rttms","**",'*.rttm'))
 
+        print(f"AMI_Label :{dir_label}-> {len(label_list)}")
+
         # per meeting
         for label in label_list:
             name = label.split('/')[-1]
