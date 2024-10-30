@@ -14,7 +14,6 @@ from torchvision import transforms
 
 from tqdm.auto import tqdm
 
-
 def counter(word):
     word = word.split("/")[-1]
     return int(word.split("_")[2])
@@ -98,9 +97,11 @@ if __name__ == '__main__':
 
     for path in tqdm(AMI) :  
         # path : /home/data/kbh/AMI_IITP/amicorpus/ES2002a/video/ES2002a.Closeup1.avi 
+
+        # IS1006d.Closeup4.avi 
+        # ES2004a.Closeup3
         # Parse name
         name = path.split('/')[-1]
-        print(name)
         meeting_id = name.split('.')[0]
         speaker_order = name.split('.')[-2][-1]
         speaker_order = str(int(speaker_order))
@@ -108,6 +109,9 @@ if __name__ == '__main__':
         speaker_id = GT[meeting_id]["Label"][str(int(speaker_order)-1)]["ID"]
         sec_audio = GT[meeting_id]["GTD"]
         frame_audio = int(sec_audio*25)
+
+        if os.path.exists(os.path.join(args.output_dir,f"{meeting_id}_{speaker_order}_{speaker_id}.npy")) :
+            continue
 
         # dir_face : /home/data/kbh/AMI_IITP/faces/ES2002a_1
         # face jpgs :  ES2002a_1_1626_1_1.jpg
@@ -117,7 +121,7 @@ if __name__ == '__main__':
         list_faces = glob.glob(os.path.join(dir_face,"*.jpg"))
         list_faces.sort(key=counter)
 
-        # segment single face
+        # single face only
         start = 0
         end = 0
         prev_frame = 0
@@ -162,7 +166,6 @@ if __name__ == '__main__':
 
         estim = -np.ones(frame_audio)
 
-
         # Run VVAD for segment
         with torch.no_grad() : 
             for idx, (start,end,faces) in enumerate(single_talk): 
@@ -174,9 +177,8 @@ if __name__ == '__main__':
                     faces = faces[:frame_audio-start]
                     end = frame_audio
 
-                length = end - start
-                #print(f"{start} ~ {end} |  {length} {len(faces)} | {frame_audio} {frame_audio - start}")
-
+                length = end - start+1
+                #print(f"{start} ~ {end} | length {length} faces {len(faces)} | frame {frame_audio} {frame_audio - start}")
 
                 # need to slide
                 if length > unit_segment :
@@ -185,6 +187,8 @@ if __name__ == '__main__':
                     while idx < length : 
                         t_slide = shift_segment
                         t_faces = faces[idx:idx+unit_segment]
+                        if len(t_faces) < 25 :
+                            break
                         t_label = load_n_process(model,t_faces,transform)
                         label = slide_label(label,t_label,idx,shift_segment)
                         #print(f"{start} {end} {idx} {t_label.mean()}")
@@ -197,7 +201,16 @@ if __name__ == '__main__':
                     #print(f"{start} {end} {label.mean()}")
                 #print(f"{label.shape}")
 
-                estim[start:end+1] = label.cpu().numpy()
+                try :
+                    estim[start:end+1] = label.cpu().numpy()
+                except ValueError as e : 
+                    print(f"ERROR:: {e}")
+                    print(f"{path} : {start} {end} {label.shape} {estim.shape}")
+                    continue
+                except RuntimeError as e : 
+                    print(f"ERROR:: {e}")
+                    print(f"{path} : {start} {end} {label.shape} {estim.shape}")
+                    continue
 
                 # Write result
-                np.save(os.path.join(args.output_dir,f"{meeting_id}_{speaker_order}_{speaker_id}"),estim)
+            np.save(os.path.join(args.output_dir,f"{meeting_id}_{speaker_order}_{speaker_id}"),estim)

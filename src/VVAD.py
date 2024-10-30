@@ -101,7 +101,6 @@ class VVAD(nn.Module):
             x : (B, 1, 96,96, T)
             40ms per each timestep
         """
-
         # encoder
         for enc in self.enc : 
             x = enc(x)

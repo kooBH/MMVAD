@@ -79,8 +79,74 @@ class AMI_label():
     DER = (FA + MD + SC) / Ground Truth Duration
 
     """
-    def measure(self, meeting, speaker, estim, unit=0.008, margin=0.25) : 
-        pass
+    def measure(self, meeting, estim, unit=0.008, margin=0.25, skip_overlap=False) : 
+        ED = estim.shape[1]*unit
+        GTD = self.data[meeting]["GTD"]
+
+        if abs(ED - GTD) > 1.0 :
+            print("ERROR::Ground Truth Duration is not matched with the estimation {} {}".format(ED, GTD))
+
+        estim_sec = []
+        speech_sec = 0
+
+        # estim frame to second
+        for idx in range(estim.shape[0]) : 
+            cur = 0
+            prev = 0
+            start = 0
+            end = 0
+            estim_sec.append([])
+            for i in range(estim.shape[1]) : 
+                cur = estim[idx][i]
+                if cur == prev :
+                    continue
+                else : 
+                    # start of speech
+                    if prev == 0:
+                        start = i
+                    # end of speech
+                    else :
+                        end  = i
+                        start_sec = start * unit
+                        end_sec = end * unit
+                        dur = end_sec - start_sec
+                        if dur < 0.2 :
+                            continue
+
+                        speech_sec += dur
+                        estim_sec[idx].append((start_sec,end_sec))
+                prev = cur
+
+        #print("total speech duration : {}".format(speech_sec))
+        ground_truth = Annotation()
+        for spk in self.data[meeting]["Label"] : 
+            for seg in self.data[meeting]["Label"][spk]["segs"] : 
+                ground_truth[Segment(seg[0],seg[1])] = self.data[meeting]["Label"][spk]["ID"]
+                #print("GT : ({}, {}) = {}".format(seg[0],seg[1],self.data[meeting]["Label"][spk]["ID"]))
+            #print("[{}]".format(self.data[meeting]["Label"][spk]["ID"]))
+
+        best_DER = 100.0
+        best_result = None
+
+        # 250 margin on both side
+        metric = DiarizationErrorRate(collar=0.5, skip_overlap=skip_overlap)
+        hypothesis = Annotation()
+        for idx, spk in enumerate(range(4)) : 
+            speaker_id = self.data[meeting]["Label"][str(spk)]["ID"]
+            #print(speaker_id)
+            for seg in estim_sec[idx] : 
+                hypothesis[Segment(seg[0],seg[1])] = speaker_id
+                #print("HP : ({}, {}) = {}".format(seg[0],seg[1],speaker_id))
+            #print("HP{} {}->[{}]".format(perm,idx,speaker_id))
+
+        # calculate DER
+        result = metric(ground_truth, hypothesis,detailed=True)
+        #print(result["diarization error rate"])
+        if result["diarization error rate"] < best_DER :
+            best_DER = result["diarization error rate"]
+            best_result = result
+        return best_DER, best_result
+
 
     def measurePIT(self, meeting, estim, unit=0.008, margin=0.25) : 
         pair = []
