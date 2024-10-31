@@ -83,7 +83,7 @@ class AMI_label():
         ED = estim.shape[1]*unit
         GTD = self.data[meeting]["GTD"]
 
-        if abs(ED - GTD) > 1.0 :
+        if abs(ED - GTD) > 3.0 :
             print("ERROR::Ground Truth Duration is not matched with the estimation {} {}".format(ED, GTD))
 
         estim_sec = []
