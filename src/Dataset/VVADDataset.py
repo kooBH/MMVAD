@@ -31,7 +31,9 @@ def video_rotate(frames, p = 0.5,angle = 30):
 # Dataset for VVAD-LRS3
 class VVADDataset(torch.utils.data.Dataset):
     def __init__(self, hp, is_train=True):
+
         self.dataset = h5py.File(hp.data.VVAD, "r")
+
         self.is_train  = is_train
 
         self.hp = hp

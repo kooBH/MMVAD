@@ -88,22 +88,19 @@ if __name__ == '__main__':
           transforms.ToTensor()
     ])
 
-    # Run for AMI dataset
-    AMI = glob.glob(os.path.join(args.input_dir,"amicorpus","**",'*Closeup*.avi'),recursive=True)
+    # Run extracted face jpgs
+    list_speaker = glob.glob(os.path.join(args.input_dir,"faces","*")) 
 
     GT = AMI_label(args.label_dir)
 
-    print("AMI : {}".format(len(AMI)))
+    print("AMI : {}".format(len(list_speaker)))
 
-    for path in tqdm(AMI) :  
-        # path : /home/data/kbh/AMI_IITP/amicorpus/ES2002a/video/ES2002a.Closeup1.avi 
-
-        # IS1006d.Closeup4.avi 
-        # ES2004a.Closeup3
+    for path in tqdm(list_speaker) :  
+        # path : /VVAD/faces/ES2002a_1
         # Parse name
         name = path.split('/')[-1]
-        meeting_id = name.split('.')[0]
-        speaker_order = name.split('.')[-2][-1]
+        meeting_id = name.split('_')[0]
+        speaker_order = name.split('_')[1]
         speaker_order = str(int(speaker_order))
         #print(f"{meeting_id} {label[meeting_id]}")
         speaker_id = GT[meeting_id]["Label"][str(int(speaker_order)-1)]["ID"]

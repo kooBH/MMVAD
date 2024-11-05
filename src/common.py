@@ -18,14 +18,20 @@ def run(data,model,criterion,hp,device="cuda:0",ret_output=False):
     target = data['target'].to(device)
     output = model(input)
 
-    loss = criterion(output,target).to(device)
-    if hp.loss.type == "MSELoss" : 
-        loss = criterion(output,target).to(device)
-    elif hp.loss.type == "wSDRLoss" : 
-        loss = criterion(estim,noisy,target, alpha=hp.loss.wSDRLoss.alpha)
-    else :
-        loss = criterion(output,target).to(device)
-    
+    if torch.isnan(target).any() or torch.isinf(target).any():
+        import pdb; pdb.set_trace()
+
+    try : 
+        if hp.loss.type == "MSELoss" : 
+            loss = criterion(output,target).to(device)
+        elif hp.loss.type == "wSDRLoss" : 
+            loss = criterion(estim,noisy,target, alpha=hp.loss.wSDRLoss.alpha)
+        else :
+            loss = criterion(output,target).to(device)
+    except RuntimeError as e :
+        print("ERROR::{}".format(e))
+        import pdb; pdb.set_trace()
+
     if ret_output :
         return output, loss
     else : 

@@ -1,52 +1,47 @@
 import glob,os
 import argparse
 from tqdm.auto import tqdm
-from AMI_label import AMI_label
 import numpy as np
 import itertools
-from scipy.interpolate import interp1d
 from multiprocessing import Pool, cpu_count
 import csv
+import torch
+import torch.nn as nn
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-v','--vvad_dir',type=str,required=True)
 parser.add_argument('-a','--avad_dir',type=str,required=True)
-parser.add_argument('-l','--label_dir',type=str,required=True)
-parser.add_argument('-o','--output_dir',type=str,required=True)
+parser.add_argument('-m','--mmvad_dir',type=str,required=True)
+parser.add_argument('--thr',type=str,default="1.5")
+parser.add_argument('--thr2',type=str,default="0.3")
 parser.add_argument('--version',type=str,required=True)
 args = parser.parse_args()
 
 FPS = 25
 THR_UP = 0.8
 THR_FACE = 0.9
-THR_DOWN = 0.1
-UNIT = 1/160.0
-GT = AMI_label(args.label_dir)
+UNIT = 0.6
 
 def sort_by_order(word) : 
     word = word.split("/")[-1]
     return int(word.split("_")[1])
 
 """
+AVAD_1
 첫 프레임은 0초가 중심입니다.
 그래서 shift = 1s, win_len = 1s 둘다
 즉 앞에 0.5초 패딩하고 뽑았습니다
+
+AVAD_2
+형식은 지난번하고 약간 다르게 4명 한파일로 묶었고, CSS에서 분리 스트림 별로 아니고 그냥 최종 Diarize 결과이고, 
+upsample안해둬서 1세그먼트당 0.6초 간격입니다
+e.g. /AVAD_2/ES2011a.npy
 """
-def post(path, THR_SUM = 1.5) : 
-    # path = args.css_dir + "/ES2002d_avad.npy"
-    meeting_id = path.split("/")[-1]
+def post(path, THR_SUM = 1.0,THR_DOWN=0.3) : 
+    name = path.split("/")[-1]
+    meeting_id = name.split(".")[0]
 
-
-    list_avad = glob.glob(os.path.join(path,"*.npy"))
-
-    avad = None
-    for i_avad, path_avad in enumerate(list_avad) :
-        # (2,T)
-        t_avad = np.load(path_avad)
-        if avad is None : 
-            avad = np.zeros((4,t_avad.shape[1]))
-        avad[i_avad] = np.logical_or(t_avad[0], t_avad[1]).astype(int)
-
+    avad = np.load(path)
 
     # load VVAD label
     # path_vvad = args.vvad_dir/ES2002d_1_MEE006.npy
@@ -54,7 +49,7 @@ def post(path, THR_SUM = 1.5) :
 
     if len(list_vvad) == 0 :
         print(f"VVAD for {meeting_id} is not found")
-        return 0,0,0,0,0,0,0
+        return 1,1,1,1,1,1,1
 
     # merge vvad
     vvad = None
@@ -68,15 +63,20 @@ def post(path, THR_SUM = 1.5) :
         vvad[i_vvad] = t_vvad
 
     # matching length
-    # interpolate vvad
+    orig_shape = vvad.shape
+    avad = torch.tensor(avad, dtype=torch.float)
+    vvad = torch.tensor(vvad)
 
-    x_orig = np.linspace(0,vvad.shape[1]-1,vvad.shape[1])
-    x_interp = np.linspace(0,vvad.shape[1]-1,avad.shape[1])
+    # add extra dimension to use torch function
+    vvad = vvad.unsqueeze(0)
+    vvad = vvad.unsqueeze(0)
 
-    vvad = np.array([
-         interp1d(x_orig, row, kind="nearest")(x_interp) for row in vvad])
+    vvad = nn.functional.interpolate(vvad, size=avad.shape,mode='nearest')
+    #vvad = nn.functional.interpolate(vvad, size=avad.shape[1], mode="linear")
 
-    #avad = np.repeat(avad, FPS,axis=1)
+    # squeezing
+    vvad = vvad.squeeze(0)
+    vvad = vvad.squeeze(0)
 
     # NOTE : vvad length is aligned at the inference routine
     len_avad = avad.shape[1]
@@ -106,24 +106,15 @@ def post(path, THR_SUM = 1.5) :
                     correct += val == avad[i_avad][i]
                     n_frame += 1
 
+        if n_frame == 0 :
+            n_frame = 1
         c_score = correct / n_frame
         if c_score > score : 
             score = c_score
             order = perm
     #print(f"Optimal order : {order} {score:.3f}")
     # into optimal order
-    avad = avad[order, :]
-
-
-    Label = GT[meeting_id]["Label"]
-    #print(Label)
-
-    DER11, result1 = GT.measure(meeting_id,avad,unit=UNIT,skip_overlap=False)
-
-    FA1 = result1["false alarm"]
-    MD1 = result1["missed detection"]
-    SC1 = result1["confusion"]
-    Total = result1["total"]
+    mmvad = avad[order, :]
 
     #print(f"w   OL | FA : {result1['false alarm']:.0f}, MD : {result1['missed detection']:.0f}, DER : {result1['diarization error rate']:.4f}")
 
@@ -135,6 +126,7 @@ def post(path, THR_SUM = 1.5) :
                 continue
             
             if avad[s][i] == 1 :  
+                # It might be other speaker's voice
                 vprob_other = 0 
                 aprob_other = 0
                 for j in range(4):
@@ -143,76 +135,48 @@ def post(path, THR_SUM = 1.5) :
                     vprob_other += vvad[j][i]
                     aprob_other += avad[j][i]
                 if vprob_other + aprob_other > THR_SUM :
+                    if vvad[s][i] < THR_DOWN : 
+                        mmvad[s][i] = 0
+                
+                # It might be silence
+                if vvad[s][i] < 0.01 :
                     avad[s][i] = 0
-            
+
+            # It is definitely talking face
+            # if avad[s][i] == 0 :
+            #   if vvad[s][i] > 0.9 :
+            #        avad[s][i] = 1
+
+            # It doesn't seem to be talking face
+            #if avad[s][i] == 1 :
+            #    if vvad[s][i] < 0.1 :
+            #        avad[s][i] = 0
+
     # Eval
 
-    #print("---- post processed ----")
+    # save vad
+    os.makedirs(os.path.join(args.mmvad_dir),exist_ok=True)
+    np.save(os.path.join(args.mmvad_dir,f"{meeting_id}.npy"),mmvad)
 
-    DER21, result2 = GT.measure(meeting_id,avad,unit=UNIT, skip_overlap=False)
-
-    FA2 = result2["false alarm"]
-    MD2 = result2["missed detection"]
-    SC2 = result2["confusion"]
-
-    return FA1,MD1,SC1, FA2,MD2,SC2, Total
+    #import pdb
+    #pdb.set_trace()
 
 list_avad = glob.glob(args.avad_dir+ "/*")
-list_thr = [1.0, 1.3, 1.5, 1.7, 1.9, 2.1]
 
 def process(idx) : 
     path = list_avad[idx]
     name = path.split("/")[-1]
     name = name.split(".")[0]
-    for thr in list_thr :
-        with open(os.path.join(args.output_dir,"tmp",str(thr),f"{name}.csv"), "w") as f :
-            FA1,MD1,SC1,FA2,MD2,SC2, Total = post(path,THR_SUM=thr)
-            f.write(f"{FA1}, {MD1}, {SC1}, {FA2}, {MD2}, {SC2}, {Total}\n")
-
+    post(path,THR_SUM=float(args.thr),THR_DOWN=float(args.thr2))
 
 if __name__ == "__main__" : 
     # Run for estimation by audio
     #list_avad = glob.glob(args.avad_dir+ "/*")
-
-
-    GT = AMI_label(args.label_dir)
-    os.makedirs(args.output_dir,exist_ok=True)
-    os.makedirs(args.output_dir+"/tmp",exist_ok=True)
+    print(f"thr : {args.thr}")
 
     cpu_num = int(cpu_count()/2)
-
-    for thr in list_thr :
-        os.makedirs(os.path.join(args.output_dir,"tmp", str(thr)),exist_ok=True)
 
     # Parallel processing
     arr = list(range(len(list_avad)))
     with Pool(cpu_num) as p:
         r = list(tqdm(p.imap(process, arr), total=len(arr),ascii=True,desc='processing'))
-
-    # Merge results
-    with open(os.path.join(args.output_dir, args.version+".csv"),"w") as f :
-        f.write("thr,DER1,DER2,Total,FA1,MD1,SC1,FA2,MD2,SC2\n")
-        for thr in list_thr : 
-            list_csv = glob.glob(os.path.join(args.output_dir,"tmp",str(thr),"*.csv"))
-
-            FA1=0
-            MD1=0
-            SC1=0
-            FA2=0
-            MD2=0
-            SC2=0
-            Total=0
-            for path in list_csv : 
-                with open(path,"r") as f2: 
-                    reader = csv.reader(f2)
-                    row = next(reader)
-                    FA1 += float(row[0])
-                    MD1 += float(row[1])
-                    SC1 += float(row[2])
-                    FA2 += float(row[3])
-                    MD2 += float(row[4])
-                    SC2 += float(row[5])
-                    Total += float(row[6])
-            DER1 = (FA1+MD1+SC1)/Total
-            DER2 = (FA2+MD2+SC2)/Total
-            f.write(f"{thr}, {DER1:.4f}, {DER2:.4f}, {Total}, {FA1}, {MD1}, {SC1}, {FA2}, {MD2}, {SC2}\n")

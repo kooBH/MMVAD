@@ -1,6 +1,0 @@
-total speech duration : 1267.8400000000001
-[MEE006]
-[FEE005]
-[MEE007]
-[MEE008]
-0.6068597420134297 {'confusion': 97.6460000000005, 'correct': 567.0789999999993, 'missed detection': 38.79999999999998, 'false alarm': 290.4949999999975, 'total': 703.5249999999997, 'diarization error rate': 0.6068597420134297}

@@ -132,6 +132,7 @@ class VVAD_helper(nn.Module) :
         y = self.m(x)
         y = nn.functional.interpolate(y,(timestep),mode='linear')
         y = torch.squeeze(y,1)
+
         return y
 
 

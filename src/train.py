@@ -26,6 +26,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     torch.autograd.set_detect_anomaly(True)
+    
 
     #hp = HParam(args.config,args.default,merge_except=["architecture"])
     hp = HParam(args.config,args.default)
