@@ -2,40 +2,54 @@ import torch
 import torch.nn as nn
 from utils.metric import run_metric
 
-
 def get_model(hp,device="cpu"):
 
     if hp.model.type == "VVAD" :
         from VVAD import VVAD_helper
         model = VVAD_helper(hp).to(device)
+    elif hp.model.type == "StreamingVAD" :
+        from AVAD.StreamingVAD import StreamingVAD_helper
+        model = StreamingVAD_helper(hp).to(device)
     else :
         return NotImplementedError("ERROR::Unsupported model type : {}".format(hp.model.type))
 
     return model
 
-def run(data,model,criterion,hp,device="cuda:0",ret_output=False): 
+def run(data,model,criterion,hp,device="cuda:0"): 
+
+    if hp.task == "AVAD" :
+        return run_AVAD(data,model,criterion,hp,device)
+
+    # TODO for VVAD
     input = data['input'].to(device)
     target = data['target'].to(device)
     output = model(input)
 
     if torch.isnan(target).any() or torch.isinf(target).any():
         import pdb; pdb.set_trace()
-
     try : 
-        if hp.loss.type == "MSELoss" : 
-            loss = criterion(output,target).to(device)
-        elif hp.loss.type == "wSDRLoss" : 
-            loss = criterion(estim,noisy,target, alpha=hp.loss.wSDRLoss.alpha)
-        else :
-            loss = criterion(output,target).to(device)
+        loss = criterion(output,target).to(device)
     except RuntimeError as e :
         print("ERROR::{}".format(e))
         import pdb; pdb.set_trace()
 
-    if ret_output :
-        return output, loss
-    else : 
-        return loss
+    return loss
+    
+def run_AVAD(data,model,criterion,hp,device="cuda:0"):
+    audio,label = data
+
+    audio = audio.to(device)
+    label = label.to(device)
+    output,h = model(audio)
+
+    if output.shape[-1] != label.shape[-1] :
+        min_len = min(output.shape[-1],label.shape[-1])
+        output = output[:,:min_len]
+        label = label[:,:min_len]
+
+    loss = criterion(output,label).to(device)
+
+    return loss
 
 
 def evaluate(hp, model,list_data,device="cuda:0"):

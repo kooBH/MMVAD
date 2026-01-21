@@ -1,9 +1,16 @@
 import torch
 import argparse
 import torchaudio
-import os
+import os,sys
 import numpy as np
 
+if __file__ not in sys.path:
+    sys.path.append(os.path.join(os.path.dirname(__file__)))
+print(sys.path)
+
+
+
+from ptflops import get_model_complexity_info
 from tensorboardX import SummaryWriter
 
 from utils.hparams import HParam
@@ -24,9 +31,6 @@ if __name__ == '__main__':
     parser.add_argument('--device','-d',type=str,required=False,default="cuda:0")
     parser.add_argument('--epoch','-e',type=int,required=False,default=None)
     args = parser.parse_args()
-
-    torch.autograd.set_detect_anomaly(True)
-    
 
     #hp = HParam(args.config,args.default,merge_except=["architecture"])
     hp = HParam(args.config,args.default)
@@ -59,11 +63,10 @@ if __name__ == '__main__':
         from Dataset.VVADDataset import VVADDataset
         train_dataset = VVADDataset(hp,is_train=True)
         test_dataset= VVADDataset(hp,is_train=False)
-    elif task == "VAD" :
-        from Dataset.VADDataset import VADDataset
-        train_dataset = VADDataset(hp,is_train=True)
-        test_dataset= VADDataset(hp,is_train=False)
-        raise NotImplementedError("task==VAD is not implemented yet")
+    elif task == "AVAD" :
+        from Dataset.AVADDataset import AVADDataset
+        train_dataset = AVADDataset(hp,is_train=True)
+        test_dataset= AVADDataset(hp,is_train=False)
     else : 
         raise Exception("ERROR::Unsupported task : {}".format(task))
 
@@ -71,14 +74,14 @@ if __name__ == '__main__':
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset,batch_size=batch_size,shuffle=False,num_workers=num_workers)
 
     model = get_model(hp,device=device)
+    macs_ptflos, params_ptflops = get_model_complexity_info(model, (16000,), as_strings=False,print_per_layer_stat=False,verbose=False)   
+    print("ptflops : MACS {}M |  PARAM {}K".format(macs_ptflos/1e6,params_ptflops/1e3))
 
     if not args.chkpt == None : 
         print('NOTE::Loading pre-trained model : '+ args.chkpt)
         model.load_state_dict(torch.load(args.chkpt, map_location=device))
 
-    if hp.loss.type == "MSELoss":
-        criterion = torch.nn.MSELoss()
-    elif hp.loss.type == "BCELoss":
+    if hp.loss.type == "BCELoss":
         criterion = torch.nn.BCELoss()
     else :
         raise Exception("ERROR::Unsupported criterion : {}".format(hp.loss.type))
@@ -96,7 +99,7 @@ if __name__ == '__main__':
                 max_lr = hp.scheduler.oneCycle.max_lr,
                 epochs=hp.train.epoch,
                 steps_per_epoch = len(train_loader)
-                )
+            )
     elif hp.scheduler.type == "CosineAnnealingLR" : 
        scheduler =  torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=hp.scheduler.CosineAnnealingLR.T_max, eta_min=hp.scheduler.CosineAnnealingLR.eta_min)
     else :
@@ -116,7 +119,6 @@ if __name__ == '__main__':
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
-           
 
             if step %  hp.train.summary_interval == 0:
                 print('TRAIN::{} : Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(version,epoch+1, num_epochs, i+1, len(train_loader), loss.item()))

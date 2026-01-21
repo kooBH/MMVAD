@@ -8,8 +8,8 @@ from tqdm import tqdm
 
 # Constants
 prefix = 'https://www.youtube.com/watch?v='
-temp_root = '/home/data/kbh/AVA-Speech-Temp/'   # Full audio storage
-output_root = '/home/data/kbh/AVA-Speech-Segments/' # Final 16kHz segments
+temp_root = '/home/data/VAD/AVA-Speech-Temp/'   # Full audio storage
+output_root = '/home/data/VAD/AVA-Speech-Segments/' # Final 16kHz segments
 
 class MyLogger(object):
     def __init__(self):
@@ -46,7 +46,7 @@ def extract_segment(input_path, start_s, end_s, label, video_id):
     duration = float(end_s) - float(start_s)
     clean_label = str(label).replace(' ', '_')
     output_filename = f"{video_id}_{start_s}_{end_s}_{clean_label}.wav"
-    output_path = os.path.join(output_root, output_filename)
+    output_path = os.path.join(output_root, clean_label, output_filename)
 
     if os.path.exists(output_path):
         return
@@ -62,6 +62,8 @@ def extract_segment(input_path, start_s, end_s, label, video_id):
 if __name__ == '__main__':
     os.makedirs(temp_root, exist_ok=True)
     os.makedirs(output_root, exist_ok=True)
+    for list_sub in ['SPEECH_WITH_NOISE','NO_SPEECH','CLEAN_SPEECH','SPEECH_WITH_MUSIC'] :
+        os.makedirs(os.path.join(output_root, list_sub), exist_ok=True)
 
     try:
         ava = pd.read_csv('ava_speech_labels_v1.csv', names=['id', 'start', 'end', 'label'])
